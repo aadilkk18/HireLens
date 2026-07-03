@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import logo from './assets/logo.png';
 
-const API_BASE = 'http://127.0.0.1:8000';
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 function App() {
   const [roles, setRoles] = useState([]);
