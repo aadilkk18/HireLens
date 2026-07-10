@@ -7,7 +7,7 @@ import io
 import os
 import json
 from dotenv import load_dotenv
-from groq import Groq
+from google import genai
 from role_resolver import resolve_role
 from role_resolver import resolve_role, list_role_titles
 load_dotenv()
@@ -27,7 +27,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 POPPLER_PATH = r"C:\poppler\poppler-26.02.0\Library\bin"
 MIN_TEXT_LENGTH_THRESHOLD = 30
 
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+gemini_client = genai.Client(     api_key=os.getenv("GEMINI_API_KEY") )
 
 SYSTEM_PROMPT = """You are a blunt, experienced HR recruiter/talent acquisition lead at a mid-to-large Pakistani company. You have screened thousands of CVs from Pakistani university graduates for entry-level and junior roles.
 
@@ -116,21 +116,52 @@ CATEGORY_WEIGHTS = {
 
 
 def get_cv_rating(cv_text: str, role: str) -> dict:
-    response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Target role: {role}\n\nCV text:\n{cv_text}"}
-        ],
-        temperature=0.4,
-    )
-    raw = response.choices[0].message.content
-    clean = raw.replace("```json", "").replace("```", "").strip()
-    rating = json.loads(clean)
+    prompt = f"""
+Target role: {role}
 
-    rating["overall_score"] = compute_weighted_score(rating["categories"])
-    return rating
+CV text:
 
+{cv_text}
+"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                SYSTEM_PROMPT,
+                prompt
+            ],
+        )
+
+        raw = response.text.strip()
+
+        clean = (
+            raw.replace("```json", "")
+               .replace("```", "")
+               .strip()
+        )
+
+        rating = json.loads(clean)
+
+        rating["overall_score"] = compute_weighted_score(
+            rating["categories"]
+        )
+
+        return rating
+
+    except json.JSONDecodeError:
+        print("Gemini returned:")
+        print(raw)
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini returned invalid JSON."
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 def compute_weighted_score(categories: dict) -> int:
     """
